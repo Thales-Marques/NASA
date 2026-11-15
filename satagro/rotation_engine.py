@@ -1,118 +1,81 @@
 """
-SatAgro - Motor de Comparação e Apoio à Decisão de Rotações
+SatAgro - Motor de Ordenação Heurística Multicritério (MCDA)
 Projeto: SatAgro - NASA Space Apps Challenge 2026
 Equipe: Latino Party
 Desafio: Field Shift: Adapting Farms with NASA Data
 
-Implementa o algoritmo de ponderação multicritério (MCDA), sensibilidade a cenários
-climáticos e geração de fichas explicativas padronizadas para cada estratégia.
+Conforme P0.1 e P0.2:
+- Implementa ordenação heurística transparente baseada exclusivamente nos pesos informados pelo produtor
+  e nas notas teóricas de referência da literatura agronômica.
+- Não inventa relações fictícias entre dados de satélite e notas agronômicas.
+- Não atribui pontuações à NASA.
+- Detalha matematicamente a contribuição de cada critério no resultado final.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 from satagro.agronomic_data import STRATEGIES_DATABASE, CRITERIA_METADATA
 
 
 def compute_rotation_rankings(
     producer_priorities: Dict[str, float],
-    climatic_indicators: Dict[str, Any],
-    climate_scenario: Dict[str, float] = None
+    indicators: Dict[str, Any] = None
 ) -> List[Dict[str, Any]]:
     """
-    Calcula a pontuação de cada estratégia de reforma do canavial
-    ponderada pelas prioridades do produtor e ajustada pelo cenário climático.
+    P0.1 - Calcula a pontuação heurística ilustrativa de cada estratégia de reforma
+    ponderada exclusivamente pelas prioridades do produtor.
     
-    producer_priorities: dicionário {criterio: peso_1_a_5}
-    climate_scenario: {
-        'rain_delta_pct': float (-30.0 a +30.0),
-        'temp_delta_c': float (-1.0 a +3.0)
-    }
+    Fórmula transparente (MCDA Ponderado):
+    S_j = sum(w_i * s_ij) * 100
+    onde sum(w_i) = 1.0 e 0 <= s_ij <= 1.0
     """
-    if climate_scenario is None:
-        climate_scenario = {"rain_delta_pct": 0.0, "temp_delta_c": 0.0}
-
-    rain_delta = climate_scenario.get("rain_delta_pct", 0.0)
-    temp_delta = climate_scenario.get("temp_delta_c", 0.0)
-
-    # 1. Normalização dos pesos das prioridades do produtor (Soma = 1.0)
     criteria_keys = list(CRITERIA_METADATA.keys())
-    raw_weights = {k: max(0.1, float(producer_priorities.get(k, 3.0))) for k in criteria_keys}
-    total_weight = sum(raw_weights.values())
-    normalized_weights = {k: raw_weights[k] / total_weight for k in criteria_keys}
 
-    # 2. Avaliação de cada estratégia
+    # 1. Normalização dos pesos fornecidos pelo produtor (Soma = 1.0)
+    raw_weights = {k: max(0.1, float(producer_priorities.get(k, 3.0))) for k in criteria_keys}
+    total_raw_weight = sum(raw_weights.values())
+    normalized_weights = {k: round(raw_weights[k] / total_raw_weight, 4) for k in criteria_keys}
+
     results = []
 
     for strat_id, strat in STRATEGIES_DATABASE.items():
-        base_scores = strat["scores"].copy()
-        adjusted_scores = {}
-
-        # Ajuste dinâmico de sensibilidade ao cenário climático:
-        # Se cenário prevê redução de chuva ou aumento de temperatura:
-        # - Culturas sensíveis a estresse hídrico (soja, amendoim) sofrem penalidade na resiliência
-        # - Crotalária mantém ou amplia vantagem relativa de proteção e tolerância
-        # - Solo descoberto (prática atual) sofre maior penalidade em proteção se chuva aumentar
-        for crit, score in base_scores.items():
-            adj_score = score
-
-            if crit == "resiliencia_hidrica":
-                if rain_delta < 0:  # Cenário mais seco
-                    if strat_id in ["soja", "amendoim"]:
-                        # Perda de pontuação proporcional ao déficit
-                        adj_score = max(0.1, score * (1.0 + (rain_delta / 100.0) * 0.8))
-                    elif strat_id == "crotalaria":
-                        # Crotalária possui sistema radicular pivotante profundo
-                        adj_score = max(0.3, score * (1.0 + (rain_delta / 100.0) * 0.2))
-                    elif strat_id == "atual":
-                        adj_score = max(0.1, score * (1.0 + (rain_delta / 100.0) * 0.5))
-
-            if crit == "protecao_solo":
-                if rain_delta > 0:  # Cenário de chuvas mais intensas
-                    if strat_id == "atual":
-                        # Solo exposto sob chuvas mais fortes perde ainda mais solo
-                        adj_score = max(0.05, score * (1.0 - (rain_delta / 100.0) * 0.5))
-                    elif strat_id == "crotalaria":
-                        adj_score = min(1.0, score * 1.02)
-
-            adjusted_scores[crit] = round(adj_score, 3)
-
-        # 3. Cálculo da pontuação composta ponderada (0 a 100)
-        final_score = 0.0
+        ref_scores = strat["reference_scores"]
         contributions = {}
+        final_score = 0.0
+
         for crit in criteria_keys:
             w = normalized_weights[crit]
-            s = adjusted_scores[crit]
+            s = ref_scores[crit]
             contrib = w * s * 100.0
-            contributions[crit] = round(contrib, 1)
+            contributions[crit] = round(contrib, 2)
             final_score += contrib
 
         final_score = round(final_score, 1)
 
-        # 4. Montagem da ficha padronizada explicativa
         results.append({
             "id": strat_id,
             "name": strat["name"],
             "crop_type": strat["crop_type"],
             "cycle_days": strat["cycle_days"],
             "final_score": final_score,
-            "adjusted_scores": adjusted_scores,
+            "reference_scores": ref_scores,
             "criteria_contributions": contributions,
-            "normalized_weights": {k: round(v, 3) for k, v in normalized_weights.items()},
-            # Ficha Padronizada
-            "why_suggested": strat["why_suggested"],
-            "evidence": strat["evidence"],
-            "benefits": strat["benefits"],
+            "raw_user_weights": raw_weights,
+            "normalized_weights": normalized_weights,
+            # 4 Camadas de Explicabilidade (P0.6)
+            "nasa_observational_data": strat["nasa_observational_data"],
+            "derived_indicators": strat["derived_indicators"],
+            "technical_literature": strat["technical_literature"],
+            "heuristic_scoring_explanation": strat["heuristic_scoring_explanation"],
             "unknowns": strat["unknowns"],
-            "risks": strat["risks"],
             "confidence": strat["confidence"],
             "specialist_review": strat["specialist_review"],
         })
 
-    # 5. Ordenação decrescente por nota final
+    # Ordenação decrescente por nota final
     results.sort(key=lambda x: x["final_score"], reverse=True)
 
-    # Atribuir posições no ranking
     for idx, item in enumerate(results, start=1):
         item["rank"] = idx
 

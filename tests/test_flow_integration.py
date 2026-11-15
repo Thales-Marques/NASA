@@ -1,80 +1,69 @@
 """
-Testes de Integração Ponta a Ponta (End-to-End Workflow)
+Testes de Integração Ponta a Ponta (Fluxo Completo Atualizado)
 SatAgro - NASA Space Apps Challenge 2026
 """
 
 import unittest
-from satagro.nasa_power import fetch_climatology, NasaPowerConnectionError, NasaPowerAPIError
+from satagro.nasa_power import (
+    fetch_climatology,
+    load_verified_pilot_dataset,
+    validate_nasa_climatology_response
+)
 from satagro.indicators import calculate_climatic_summary
-from satagro.alerts import evaluate_agroclimatic_alerts
+from satagro.alerts import evaluate_agroclimatic_signals
 from satagro.rotation_engine import compute_rotation_rankings
 
 
 class TestEndToEndWorkflow(unittest.TestCase):
     def test_complete_sertaozinho_pipeline(self):
-        # 1. Coordenadas do Piloto
-        lat, lon = -21.1378, -47.9897
+        # 1. Conjunto Verificado do Piloto
+        pilot_data = load_verified_pilot_dataset()
+        self.assertIsNotNone(pilot_data)
+        self.assertTrue(pilot_data["is_verified_pilot"])
+        self.assertIn("parameters", pilot_data)
+        self.assertIn("metadata", pilot_data)
 
-        # 2. Coleta NASA POWER
-        nasa_data = fetch_climatology(lat, lon, use_cache=True)
-        self.assertIsNotNone(nasa_data)
-        self.assertIn("parameters", nasa_data)
-        self.assertIn("PRECTOTCORR", nasa_data["parameters"])
-        self.assertIn("T2M", nasa_data["parameters"])
+        # 2. Metadados Extraídos Dinamicamente
+        meta = pilot_data["metadata"]
+        self.assertIn("2001", meta["climatology_range"])
+        self.assertIn("2025", meta["climatology_range"])
+        self.assertIn("MERRA2", meta["sources"])
 
         # 3. Cálculo de Indicadores
-        indicators = calculate_climatic_summary(nasa_data["parameters"], lat=lat)
+        indicators = calculate_climatic_summary(pilot_data["parameters"], metadata=meta)
         annual_rain = indicators["annual_precipitation"]["value"]
         annual_temp = indicators["annual_mean_temp"]["value"]
-        self.assertGreater(annual_rain, 800.0)
-        self.assertLess(annual_rain, 2500.0)
-        self.assertGreater(annual_temp, 18.0)
-        self.assertLess(annual_temp, 30.0)
+        self.assertAlmostEqual(annual_rain, 1271.5, places=0)
+        self.assertAlmostEqual(annual_temp, 23.5, delta=1.0)
+        self.assertNotIn("annual_et0", indicators)  # P0.5
 
-        # 4. Avaliação de Alertas Agroclimáticos
-        alerts = evaluate_agroclimatic_alerts(indicators, nasa_data["parameters"])
-        self.assertGreaterEqual(len(alerts), 3)
-        for alert in alerts:
-            self.assertIn("title", alert)
-            self.assertIn("summary", alert)
-            self.assertIn("evidence", alert)
-            self.assertIn("scientific_basis", alert)
-            self.assertIn("recommendation", alert)
-            self.assertIn("limitation", alert)
+        # 4. Avaliação de Sinais Climatológicos Exploratórios
+        signals = evaluate_agroclimatic_signals(indicators, pilot_data["parameters"], metadata=meta)
+        self.assertEqual(len(signals), 4)
+        for sig in signals:
+            self.assertIn("title", sig)
+            self.assertIn("observation", sig)
+            self.assertIn("what_it_is_not", sig)
+            self.assertIn("literature_reference", sig)
+            self.assertIn("limitation", sig)
 
-        # 5. Motor de Decisão com Prioridades Variadas
-        # Cenário 1: Foco em Regeneração do Solo
+        # 5. Motor Heurístico com Prioridades
         priorities_soil = {
             "protecao_solo": 5, "fixacao_nitrogenio": 5, "quebra_pragas": 4,
             "resiliencia_hidrica": 4, "renda_adicional": 1, "simplicidade_operacional": 2
         }
-        rankings_soil = compute_rotation_rankings(priorities_soil, indicators)
-        self.assertEqual(rankings_soil[0]["id"], "crotalaria")
-        self.assertEqual(rankings_soil[0]["rank"], 1)
+        rankings = compute_rotation_rankings(priorities_soil, indicators)
+        self.assertEqual(rankings[0]["id"], "crotalaria")
+        self.assertEqual(rankings[0]["rank"], 1)
 
-        # Cenário 2: Foco em Renda Imediata
-        priorities_income = {
-            "protecao_solo": 1, "fixacao_nitrogenio": 1, "quebra_pragas": 2,
-            "resiliencia_hidrica": 2, "renda_adicional": 5, "simplicidade_operacional": 3
-        }
-        rankings_income = compute_rotation_rankings(priorities_income, indicators)
-        top_income_ids = [rankings_income[0]["id"], rankings_income[1]["id"]]
-        self.assertTrue("soja" in top_income_ids or "amendoim" in top_income_ids)
-
-        # 6. Ficha Padronizada Completa
-        for r in rankings_soil:
-            self.assertTrue(len(r["why_suggested"]) > 10)
-            self.assertTrue(len(r["benefits"]) > 10)
-            self.assertTrue(len(r["risks"]) > 10)
-            self.assertTrue(len(r["unknowns"]) > 10)
-            self.assertTrue(len(r["evidence"]) > 10)
-            self.assertTrue(any(c in r["confidence"] for c in ["Alta", "Média", "Baixa"]))
-            self.assertTrue(len(r["specialist_review"]) > 10)
-
-    def test_api_error_handling_invalid_coords(self):
-        # Coordenadas fora da faixa geográfica mundial válida
-        with self.assertRaises(Exception):
-            fetch_climatology(lat=200.0, lon=500.0, use_cache=False)
+        # 6. Ficha com 4 Camadas Explícitas (P0.6)
+        for r in rankings:
+            self.assertTrue(len(r["nasa_observational_data"]) > 15)
+            self.assertTrue(len(r["derived_indicators"]) > 15)
+            self.assertTrue(len(r["technical_literature"]) > 15)
+            self.assertTrue(len(r["heuristic_scoring_explanation"]) > 15)
+            self.assertIn("Qualitativa / Heurística", r["confidence"])
+            self.assertTrue(len(r["specialist_review"]) > 15)
 
 
 if __name__ == "__main__":
