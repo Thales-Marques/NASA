@@ -7,6 +7,7 @@ Desafio: Field Shift: Adapting Farms with NASA Data
 Gera sinais climatológicos exploratórios a partir dos dados históricos da NASA POWER.
 Conforme P0.5: Não infere riscos reais de talhão (erosão, veranico, pragas, ausência de geada),
 apresentando apenas correlações históricas com limitações e avisos explícitos.
+Sem emojis conforme diretriz de interface profissional e sóbria.
 """
 
 from __future__ import annotations
@@ -42,10 +43,9 @@ def evaluate_agroclimatic_signals(
     reform_pct = (reform_rain / annual_rain * 100) if annual_rain > 0 else 0
     signals.append({
         "id": "sinal_concentracao_chuva",
-        "category": "Sinal Climatológico Regional (Chuva)",
+        "category": "Sinal Climatologico Regional (Chuva)",
         "badge_color": "#2E6FD8",
-        "icon": "🌧️",
-        "title": "Concentração Histórica de Chuva na Janela de Reforma (Nov–Mar)",
+        "title": "Concentracao Historica de Chuva na Janela de Reforma (Nov-Mar)",
         "observation": (
             f"Na série da NASA POWER ({climatology_range}), {reform_pct:.1f}% da precipitação anual "
             f"({reform_rain:.0f} mm de um total de {annual_rain:.0f} mm) ocorre entre novembro e março."
@@ -66,10 +66,9 @@ def evaluate_agroclimatic_signals(
     dry_ratio = indicators.get("seasonal_dry_ratio", {}).get("value", 17.0)
     signals.append({
         "id": "sinal_sazonalidade_inverno",
-        "category": "Sinal Climatológico Regional (Sazonalidade)",
+        "category": "Sinal Climatologico Regional (Sazonalidade)",
         "badge_color": "#2E6FD8",
-        "icon": "☀️",
-        "title": "Estação Seca Pronunciada de Inverno (Abr–Set)",
+        "title": "Estacao Seca Pronunciada de Inverno (Abr-Set)",
         "observation": (
             f"Apenas {dry_ratio:.1f}% da chuva histórica regional cai entre abril e setembro. "
             f"As médias mensais de junho, julho e agosto são historicamente inferiores a 30 mm/mês."
@@ -89,10 +88,9 @@ def evaluate_agroclimatic_signals(
     # SINAL 3: Mínimas Históricas e Microclimas Térmicos
     signals.append({
         "id": "sinal_termico_geada",
-        "category": "Sinal Climatológico Regional (Temperatura)",
+        "category": "Sinal Climatologico Regional (Temperatura)",
         "badge_color": "#0B3D91",
-        "icon": "❄️",
-        "title": "Perfil Térmico de Inverno e Limitações da Grade Espacial",
+        "title": "Perfil Termico de Inverno e Limitacoes da Grade Espacial",
         "observation": (
             f"A menor temperatura média mensal histórica na série regional da NASA POWER a 2m é de {min_temp:.1f} °C."
         ),
@@ -114,10 +112,9 @@ def evaluate_agroclimatic_signals(
 
     signals.append({
         "id": "sinal_bioclimatico_pragas",
-        "category": "Sinal Climatológico Regional (Bioclima)",
+        "category": "Sinal Climatologico Regional (Bioclima)",
         "badge_color": "#F57C00",
-        "icon": "🔍",
-        "title": "Coincidência Bioclimática Regional com Período de Atividade de Pragas",
+        "title": "Coincidencia Bioclimatica Regional com Periodo de Atividade de Pragas",
         "observation": (
             f"As médias históricas de verão na região combinam temperaturas médias elevadas ({jan_temp:.1f} °C) "
             f"com umidade relativa média estimada em torno de {avg_summer_rh:.0f}%."

@@ -310,6 +310,62 @@ class TestCodexAcceptance(unittest.TestCase):
             with self.assertRaises(NasaPowerConnectionError):
                 fetch_climatology(lat=-21.1775, lon=-47.8103, use_cache=False, force_pilot_demo=False)
 
+    # --------------------------------------------------------------------------
+    # 13. Correção 1: Botão de consulta força requisição real à NASA POWER
+    # --------------------------------------------------------------------------
+    def test_13_consult_button_forces_live_request_ignoring_cache(self):
+        # Garante que quando use_cache=False, o cliente ignora o cache local e faz HTTP real
+        with patch("requests.get") as mock_get:
+            pilot_mock = load_verified_pilot_dataset()
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            # Retorna payload formatado da NASA
+            mock_resp.json.return_value = {
+                "header": {"range": "2001–2025", "fill_value": -999.0, "sources": ["MERRA2"]},
+                "properties": {"parameter": pilot_mock["parameters"]}
+            }
+            mock_get.return_value = mock_resp
+
+            # Executa com use_cache=False (comportamento forçado pelo botão)
+            res = fetch_climatology(lat=-22.7253, lon=-47.6492, use_cache=False)
+            self.assertEqual(mock_get.call_count, 1)
+            self.assertFalse(res["is_cached"])
+            self.assertEqual(res["latitude"], -22.7253)
+            self.assertEqual(res["longitude"], -47.6492)
+
+    # --------------------------------------------------------------------------
+    # 14. Correção 2: Sincronização dos Presets no Streamlit
+    # --------------------------------------------------------------------------
+    def test_14_preset_synchronization_piracicaba(self):
+        from app import ONLINE_PRESETS, on_preset_change
+
+        # Simula troca do preset no session_state de Ribeirão Preto para Piracicaba
+        mock_state = {
+            "online_preset_select": "Piracicaba — SP (Centro Tradicional)",
+            "online_lat_input": -21.1775,
+            "online_lon_input": -47.8103
+        }
+        with patch("streamlit.session_state", mock_state):
+            on_preset_change()
+            # Coordenadas devem atualizar imediatamente para Piracicaba
+            self.assertEqual(mock_state["online_lat_input"], -22.7253)
+            self.assertEqual(mock_state["online_lon_input"], -47.6492)
+
+    # --------------------------------------------------------------------------
+    # 15. Correção 3: Remoção completa de emojis da interface
+    # --------------------------------------------------------------------------
+    def test_15_zero_emojis_in_source_code_and_ui(self):
+        import glob, unicodedata
+
+        for file in glob.glob("**/*.py", recursive=True):
+            if ".venv" in file:
+                continue
+            with open(file, encoding="utf-8") as f:
+                for line_idx, line in enumerate(f, 1):
+                    # Procura caracteres emoji (categoria 'So' ou 'Sk' ou ord > 127000)
+                    emojis = [c for c in line if (unicodedata.category(c) in ["So", "Sk"] or ord(c) > 127000) and c != "°"]
+                    self.assertEqual(len(emojis), 0, f"Emoji detectado em {file}:{line_idx}: {emojis}")
+
 
 if __name__ == "__main__":
     unittest.main()
