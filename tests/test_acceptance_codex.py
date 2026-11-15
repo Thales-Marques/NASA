@@ -268,26 +268,47 @@ class TestCodexAcceptance(unittest.TestCase):
     # 10. Demonstração com dados verificados do piloto sem acesso à API (P0.7)
     # --------------------------------------------------------------------------
     def test_10_demo_with_verified_pilot_without_api_access(self):
-        # Simula ausência total de internet bloqueando requests.get
-        with patch("requests.get", side_effect=requests.ConnectionError("Sem conexão com a internet")):
-            # Consulta para Sertãozinho deve retornar com sucesso o conjunto verificado
-            pilot_data = fetch_climatology(lat=-21.1378, lon=-47.9897, use_cache=False)
-            self.assertIsNotNone(pilot_data)
-            self.assertTrue(pilot_data.get("is_verified_pilot"))
-            self.assertIn("offline_notice", pilot_data)
+        # Demonstração do piloto carrega com sucesso sem dependência de rede
+        pilot_data = load_verified_pilot_dataset()
+        self.assertIsNotNone(pilot_data)
+        self.assertTrue(pilot_data.get("is_verified_pilot"))
+        self.assertEqual(pilot_data["latitude"], -21.1378)
+        self.assertEqual(pilot_data["longitude"], -47.9897)
 
-            # Executar cálculo de indicadores
-            ind = calculate_climatic_summary(pilot_data["parameters"], metadata=pilot_data["metadata"])
-            self.assertEqual(ind["annual_precipitation"]["value"], 1271.5)
+        # Executar cálculo de indicadores
+        ind = calculate_climatic_summary(pilot_data["parameters"], metadata=pilot_data["metadata"])
+        self.assertEqual(ind["annual_precipitation"]["value"], 1271.5)
 
-            # Executar sinais
-            sigs = evaluate_agroclimatic_signals(ind, pilot_data["parameters"], metadata=pilot_data["metadata"])
-            self.assertEqual(len(sigs), 4)
+        # Executar sinais
+        sigs = evaluate_agroclimatic_signals(ind, pilot_data["parameters"], metadata=pilot_data["metadata"])
+        self.assertEqual(len(sigs), 4)
 
-            # Executar motor heurístico
-            ranks = compute_rotation_rankings({"protecao_solo": 5, "fixacao_nitrogenio": 4, "quebra_pragas": 4,
-                                               "resiliencia_hidrica": 3, "renda_adicional": 2, "simplicidade_operacional": 2})
-            self.assertEqual(len(ranks), 4)
+        # Executar motor heurístico
+        ranks = compute_rotation_rankings({"protecao_solo": 5, "fixacao_nitrogenio": 4, "quebra_pragas": 4,
+                                           "resiliencia_hidrica": 3, "renda_adicional": 2, "simplicidade_operacional": 2})
+        self.assertEqual(len(ranks), 4)
+
+    # --------------------------------------------------------------------------
+    # 11. Regressão 1: Coordenadas estritamente fixas no modo piloto
+    # --------------------------------------------------------------------------
+    def test_11_demo_mode_strictly_fixes_pilot_coordinates(self):
+        pilot_data = load_verified_pilot_dataset()
+        # Coordenadas do piloto devem ser inequivocamente as de Sertãozinho
+        self.assertEqual(pilot_data["latitude"], -21.1378)
+        self.assertEqual(pilot_data["longitude"], -47.9897)
+        self.assertTrue(pilot_data["is_verified_pilot"])
+
+    # --------------------------------------------------------------------------
+    # 12. Regressão 2: Falha online NUNCA substitui silenciosamente pelo piloto
+    # --------------------------------------------------------------------------
+    def test_12_online_failure_never_silently_returns_pilot(self):
+        # Simula falha de conexão na consulta online para qualquer coordenada (mesmo em Sertãozinho)
+        with patch("requests.get", side_effect=requests.ConnectionError("Offline")):
+            with self.assertRaises(NasaPowerConnectionError):
+                fetch_climatology(lat=-21.1378, lon=-47.9897, use_cache=False, force_pilot_demo=False)
+
+            with self.assertRaises(NasaPowerConnectionError):
+                fetch_climatology(lat=-21.1775, lon=-47.8103, use_cache=False, force_pilot_demo=False)
 
 
 if __name__ == "__main__":

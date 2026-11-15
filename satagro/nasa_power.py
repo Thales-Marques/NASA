@@ -195,6 +195,7 @@ def load_verified_pilot_dataset() -> Dict[str, Any]:
     """
     P0.7 - Carrega o conjunto verificado de demonstração do ponto piloto de Sertãozinho (SP).
     Garante execução 100% confiável e sem dependência de rede ou de cache ignorado pelo Git.
+    As coordenadas são estritamente fixas em (-21.1378, -47.9897).
     """
     if not os.path.exists(VERIFIED_PILOT_FILE):
         raise NasaPowerError(f"Arquivo de demonstração verificado não encontrado em: {VERIFIED_PILOT_FILE}")
@@ -207,22 +208,17 @@ def load_verified_pilot_dataset() -> Dict[str, Any]:
     metadata = parse_nasa_metadata(raw_response)
 
     return {
-        "source": "NASA POWER Climatology API v2.10.1 (Verificado para o Piloto)",
+        "source": "NASA POWER Climatology API v2.10.1 (Dataset Verificado do Piloto)",
         "is_verified_pilot": True,
         "is_cached": False,
         "pilot_site": pilot_data.get("pilot_site", "Sertãozinho - SP, Brasil"),
-        "latitude": pilot_data.get("latitude", -21.1378),
-        "longitude": pilot_data.get("longitude", -47.9897),
+        "latitude": -21.1378,
+        "longitude": -47.9897,
         "collected_at": pilot_data.get("acquired_at_utc", "2026-11-15 22:29:38 UTC"),
         "metadata": metadata,
         "parameters": validated_params,
         "verification_note": pilot_data.get("verification_note", "Conjunto autêntico verificado."),
     }
-
-
-def is_near_pilot(lat: float, lon: float, tolerance: float = 0.05) -> bool:
-    """Verifica se a coordenada coincide com o local-piloto de Sertãozinho."""
-    return abs(lat - (-21.1378)) < tolerance and abs(lon - (-47.9897)) < tolerance
 
 
 def fetch_climatology(
@@ -235,10 +231,11 @@ def fetch_climatology(
     """
     Recupera a climatologia histórica com validação estrita e tratamento de erros.
     
-    1. Se force_pilot_demo for True ou em caso de falha de rede para Sertãozinho,
-       utiliza o conjunto de demonstração verificado empacotado no repositório.
-    2. Valida todos os parâmetros contra sentinelas (-999) e meses ausentes antes de aceitar.
-    3. Trata HTTP 429 (Too Many Requests), 5xx e timeouts de forma limpa.
+    1. Se force_pilot_demo for True, utiliza o conjunto de demonstração verificado.
+    2. Em modo online normal, executa a requisição real à API da NASA para (lat, lon).
+    3. NUNCA substitui silenciosamente uma falha de consulta online pelos dados do piloto.
+    4. Trata HTTP 429 (Too Many Requests), 5xx e timeouts levantando exceções explícitas.
+    5. Diferencia explicitamente se os dados vieram do cache local ou de consulta ao vivo.
     """
     if force_pilot_demo:
         return load_verified_pilot_dataset()
@@ -279,36 +276,21 @@ def fetch_climatology(
     try:
         response = requests.get(endpoint_url, params=params, timeout=timeout)
     except (requests.ConnectionError, requests.Timeout) as net_err:
-        if is_near_pilot(lat, lon):
-            pilot = load_verified_pilot_dataset()
-            pilot["offline_notice"] = (
-                f"Aviso de Rede: A API da NASA POWER está temporariamente inacessível ({type(net_err).__name__}). "
-                "Exibindo com segurança o conjunto de demonstração verificado do piloto de Sertãozinho."
-            )
-            return pilot
-
+        # P0: Não substituir silenciosamente consulta online malsucedida pelos dados do piloto!
         raise NasaPowerConnectionError(
-            f"Não foi possível conectar à API da NASA POWER ({type(net_err).__name__}). "
+            f"Não foi possível conectar à API da NASA POWER para ({lat:.4f}, {lon:.4f}) ({type(net_err).__name__}). "
             f"Verifique sua conexão com a internet ou tente novamente em instantes."
         ) from net_err
 
     if response.status_code == 429:
-        if is_near_pilot(lat, lon):
-            pilot = load_verified_pilot_dataset()
-            pilot["offline_notice"] = "Aviso (HTTP 429): Limite de requisições da NASA atingido. Exibindo conjunto verificado do piloto."
-            return pilot
         raise NasaPowerAPIError(
-            "A API da NASA POWER retornou HTTP 429 (Muitas Requisições / Rate Limit). Aguarde alguns segundos.",
+            f"A API da NASA POWER retornou HTTP 429 (Muitas Requisições / Rate Limit) para ({lat:.4f}, {lon:.4f}). Aguarde alguns segundos.",
             status_code=429
         )
 
     if response.status_code >= 500:
-        if is_near_pilot(lat, lon):
-            pilot = load_verified_pilot_dataset()
-            pilot["offline_notice"] = f"Aviso (HTTP {response.status_code}): Servidor da NASA indisponível. Exibindo conjunto verificado do piloto."
-            return pilot
         raise NasaPowerAPIError(
-            f"O servidor da NASA POWER apresentou instabilidade temporária (HTTP {response.status_code}).",
+            f"O servidor da NASA POWER apresentou instabilidade temporária (HTTP {response.status_code}) ao consultar ({lat:.4f}, {lon:.4f}).",
             status_code=response.status_code
         )
 
